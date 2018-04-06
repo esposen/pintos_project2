@@ -29,6 +29,7 @@ tid_t
 process_execute (const char *file_name) 
 {
   char *fn_copy;
+  char *dir[];
   tid_t tid;
 
   /* Make a copy of FILE_NAME.
