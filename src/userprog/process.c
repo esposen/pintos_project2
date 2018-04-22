@@ -40,7 +40,7 @@ process_execute (const char *file_name)
   strlcpy (fn_copy, file_name, PGSIZE);
   
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create (file_name, PRI_DEFAULT+2, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy);
   return tid;
@@ -338,6 +338,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
  done:
   /* We arrive here whether the load is successful or not. */
   file_close (file);
+  free(dir);
   return success;
 }
 
@@ -456,6 +457,7 @@ setup_stack (void **esp, char **dir, int argc)
 {
   uint8_t *kpage;
   bool success = false;
+  void *offset = PHYS_BASE;
 
   //printf("setting up stack \n");
   
@@ -472,6 +474,8 @@ setup_stack (void **esp, char **dir, int argc)
 	for(int i=argc-1; i>=0; i--){ //args (i.e. dir)
 	  *esp -= sizeof(char)*(strlen(dir[i])+1);
 	  strlcpy(*esp,dir[i],strlen(dir[i])+1);
+	  //printf("&dir[%d]: %x\n",i,*esp);
+	  
 	}
 	
 	*esp -= sizeof(char *); //null delimiter word
@@ -481,32 +485,23 @@ setup_stack (void **esp, char **dir, int argc)
 
 	
 	for(int i=argc-1; i>=0; i--){   //dir addresses
-	  *esp -=4;
-
-	  //I need a pointer that when dereferenced (with []) gives address of dir[i]; Oh god there must be a better way
+	  //printf("%d,%x\n",i,offset);
+	  offset -= strlen(dir[i])+1;
+	  //printf("%d,%d,%x\n",strlen(dir[i])+1,i,offset);
 	  
-	  uint32_t * add;
-	  add = &dir[i];
-	  uint32_t ** add2;
-	  add2 = &add;
-	  memcpy(*esp,add2,4);
+	  *esp -= sizeof(char *);
+	  *(uint32_t *)* esp = (uint32_t *) offset;
 	}
 	
-	uint32_t * add;
-	add = &dir;
-	uint32_t ** add2;
-	add2 = &add;
-	
+	offset = *esp; 
 	*esp -= sizeof(char **);	//address of dir
-	memcpy(*esp,add2,sizeof(char**));
+	*(uint32_t *)*esp = (uint32_t) offset;
 	
 	*esp -= sizeof(int);            //argc
 	*(int *)*esp = (int) argc;
-
-	//This fake address pushes causes a PF (rights violation error reading page in user context). Guess that means it's right 
+	
 	*esp -= sizeof(void *);   //fake return address
 	*(uint32_t *)*esp=(uint32_t) 0;
-	
       }
 
 
@@ -514,7 +509,7 @@ setup_stack (void **esp, char **dir, int argc)
 	palloc_free_page (kpage);
     }
 
-  hex_dump((uintptr_t)*esp,*esp,(int)PHYS_BASE-(int)*esp,true);  
+  // hex_dump((uintptr_t)*esp,*esp,(int)PHYS_BASE-(int)*esp,true);  
   // printf("set up stack (hopefully) \n");
   
   return success;
