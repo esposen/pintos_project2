@@ -1,4 +1,4 @@
 #!/bin/bash
 
 make
-pintos run "echo hello"
+pintos -q run "echo still broken\n"

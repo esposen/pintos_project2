@@ -475,7 +475,6 @@ setup_stack (void **esp, char **dir, int argc)
 	  *esp -= sizeof(char)*(strlen(dir[i])+1);
 	  strlcpy(*esp,dir[i],strlen(dir[i])+1);
 	  //printf("&dir[%d]: %x\n",i,*esp);
-	  
 	}
 	
 	*esp -= sizeof(char *); //null delimiter word
@@ -483,6 +482,10 @@ setup_stack (void **esp, char **dir, int argc)
 
 	//*(int *)args[i];
 
+	//padding
+	while((uint32_t)*esp % sizeof(void *) != 0){
+	  *esp -= sizeof(char);
+	}
 	
 	for(int i=argc-1; i>=0; i--){   //dir addresses
 	  //printf("%d,%x\n",i,offset);
