@@ -118,7 +118,6 @@ syscall_handler (struct intr_frame *f UNUSED)
  }
 
 void s_halt (void){
-  //printf("halt\n");
   shutdown_power_off();
   NOT_REACHED();
 }
