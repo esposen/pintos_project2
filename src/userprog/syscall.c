@@ -76,12 +76,20 @@ syscall_handler (struct intr_frame *f UNUSED)
     //File manip
   case SYS_CREATE: ;
     get_args(args,sp,2);
+    if(args[0] == NULL){ //filename can't be NULL
+      f->eax = -1;
+      s_exit(-1);
+    }
     retvalb = s_create((char *)args[0],(unsigned)args[1]);
     f->eax = retvalb;
     break;
   case SYS_REMOVE: ;
     break;
+    
   case SYS_OPEN: ;
+    get_args(args,sp,1);
+    retvali = s_open((char *)args[0]);
+    f->eax = retvali;
     break;
   case SYS_FILESIZE: ;
     break;
@@ -125,14 +133,32 @@ void s_exit (int s){
 // int s_wait (pid_t);
 
 bool s_create (const char *file, unsigned initial_size){
-  //filename can't be: empty,NULL
+  //filename can't be empty
   if(strcmp(file,"") == 0) return false;
-  //if(file==NULL) return false;
+  
   bool success = filesys_create(file, initial_size);
   return success;
 }
+
 // bool s_remove (const char *file);
-// int s_open (const char *file);
+int s_open (const char *file){
+  struct openfile of;
+  struct thread *t = thread_current(); //list stored in thread struct
+
+  //Filename can't be NULL or empty
+  if(file == NULL) return -1; 
+  if(strcmp(file,"") == 0) return -1;
+  
+  struct file *f = filesys_open(file); //open file
+  if(f == NULL) return -1; //if NULL ptr, failed to open
+
+  //fill openfile struct and push onto list
+  of.fd = t->lastfd++;
+  of.fileptr = f;
+  list_push_back(&t->openfiles,&of.fileelem);
+
+  return of.fd;
+}
 // int filesize (int fd);
 // int read (int fd, void *buffer, unsigned length);
 
