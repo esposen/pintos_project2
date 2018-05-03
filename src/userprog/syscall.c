@@ -83,7 +83,11 @@ syscall_handler (struct intr_frame *f UNUSED)
     retvalb = s_create((char *)args[0],(unsigned)args[1]);
     f->eax = retvalb;
     break;
+    
   case SYS_REMOVE: ;
+    get_args(args,sp,1);
+    retvalb = s_remove((char *)args[0]);
+    f->eax = retvali;
     break;
     
   case SYS_OPEN: ;
@@ -139,7 +143,14 @@ bool s_create (const char *file, unsigned initial_size){
   return success;
 }
 
-// bool s_remove (const char *file);
+bool s_remove (const char *file){
+  //filename can't be empty
+  if(strcmp(file,"") == 0) return false;
+  
+  bool success = filesys_remove(file);
+  return success;
+
+}
 int s_open (const char *file){
   struct openfile of;
   struct thread *t = thread_current(); //list stored in thread struct
