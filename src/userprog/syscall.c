@@ -12,24 +12,28 @@
 #include "pagedir.h"
 #include "filesys/filesys.h"
 
+#define UADDR_BOTTOM ((void *) 0x08048000)
+
 static void syscall_handler (struct intr_frame *);
 
 void s_halt (void) NO_RETURN;
-void s_exit (int) NO_RETURN;
-pid_t s_exec (const char *file);
+void s_exit (int, struct intr_frame *) NO_RETURN;
+pid_t s_exec (const char *);
 int s_wait (pid_t);
-bool s_create (const char *file, unsigned initial_size);
-bool s_remove (const char *file);
-int s_open (const char *file);
-int s_filesize (int fd);
-int s_read (int fd, void *buffer, unsigned length);
-int s_write(int fd, const void *buffer, unsigned size);
-void s_seek (int fd, unsigned position);
-unsigned s_tell (int fd);
-void s_close (int fd);
+bool s_create (const char *, unsigned);
+bool s_remove (const char *);
+int s_open (const char *);
+int s_filesize (int);
+int s_read (int, void *, unsigned);
+int s_write(int , const void *, unsigned);
+void s_seek (int, unsigned);
+unsigned s_tell (int);
+void s_close (int);
 
 //Helper Function
 void get_args(uint32_t *buf, void *esp,int argc);
+void verify_ptr(void *,struct intr_frame *);
+void *usr_to_kernel(void *, struct intr_frame *);
 
 void
 syscall_init (void) 
@@ -56,58 +60,69 @@ syscall_handler (struct intr_frame *f UNUSED)
   pid_t retvalp;
   unsigned retvalu;
 
+  //ptr
+  void *ptr;
+
   switch (syscode){
     //Halt + Exit
   case SYS_HALT: ;
     s_halt();
     break;
+    
   case SYS_EXIT: ;
     int status = *(int *)sp; //grab status and store in eax register
-    f->eax = status;
-    s_exit(status);
+    s_exit(status,f);
     break;
 
     //Exec + Wait
   case SYS_EXEC: ;
     break;
+    
   case SYS_WAIT: ;
     break;
 
     //File manip
   case SYS_CREATE: ;
     get_args(args,sp,2);
-    if(args[0] == NULL){ //filename can't be NULL
-      f->eax = -1;
-      s_exit(-1);
-    }
-    retvalb = s_create((char *)args[0],(unsigned)args[1]);
+    if(args[0] == NULL) //filename can't be NULL
+      s_exit(-1,f);
+    ptr = usr_to_kernel((void *)args[0],f);
+    retvalb = s_create((char *)ptr,(unsigned)args[1]);
     f->eax = retvalb;
     break;
     
   case SYS_REMOVE: ;
     get_args(args,sp,1);
-    retvalb = s_remove((char *)args[0]);
+    ptr = usr_to_kernel((void *)args[0],f);
+    retvalb = s_remove((char *)ptr);
     f->eax = retvali;
     break;
     
   case SYS_OPEN: ;
     get_args(args,sp,1);
-    retvali = s_open((char *)args[0]);
+    ptr = usr_to_kernel((void *)args[0],f);
+    retvali = s_open((char *)ptr);
     f->eax = retvali;
     break;
+    
   case SYS_FILESIZE: ;
     break;
 
     //Read+Write
   case SYS_READ: ;
-    break;  
+    break;
+    
   case SYS_WRITE: ;
     get_args(args,sp,3);
-    retvali = s_write((int)args[0],(void *)args[1],(unsigned)args[2]);
+    
+    ptr = usr_to_kernel((void *)args[1],f);
+    retvali = s_write((int)args[0],(void *)ptr,(unsigned)args[2]);
     f->eax = retvali;
     break;
+    
   case SYS_SEEK : ;
     break;
+    
   case SYS_TELL: ;
     break;
 
@@ -126,7 +141,8 @@ void s_halt (void){
   NOT_REACHED();
 }
 
-void s_exit (int s){
+void s_exit (int s, struct intr_frame *f){
+  f->eax = s;
   printf("%s: exit(%d)\n",thread_current()->name,s);
   thread_exit();
   NOT_REACHED();
@@ -149,8 +165,8 @@ bool s_remove (const char *file){
   
   bool success = filesys_remove(file);
   return success;
-
 }
+
 int s_open (const char *file){
   struct openfile of;
   struct thread *t = thread_current(); //list stored in thread struct
@@ -169,6 +185,7 @@ int s_open (const char *file){
 
   return of.fd;
 }
+
 // int filesize (int fd);
 // int read (int fd, void *buffer, unsigned length);
 
@@ -181,7 +198,7 @@ int s_write(int fd, const void *buffer, unsigned size){
 }
 // void seek (int fd, unsigned position);
 // unsigned tell (int fd);
-// void close (int fd);
+// void close (int fd){}
 
 void get_args(uint32_t *buf, void *esp,int argc){
   void *sp = esp;
@@ -191,3 +208,17 @@ void get_args(uint32_t *buf, void *esp,int argc){
     sp += sizeof(int *);    
   }
 }
+
+/* verifies within valid user virtual memory  */
+void verify_ptr(void *ptr,struct intr_frame *f){
+  if(!is_user_vaddr(ptr) || ptr<UADDR_BOTTOM) s_exit(-1,f);
+}
+
+/* converts to physical memory */
+void *usr_to_kernel(void *vaddr, struct intr_frame *f){
+  verify_ptr(vaddr,f);
+  void *p = pagedir_get_page(thread_current()->pagedir,vaddr);
+  if(p == NULL) s_exit(-1,f);
+  
+  return p;
+} 
