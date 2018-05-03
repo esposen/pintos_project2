@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "filesys/filesys.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -100,6 +101,11 @@ struct thread
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
+    
+    // struct openfile openf;
+    struct list openfiles;
+    
+    int lastfd; /*Last file descriptor given*/
   };
 
 /* If false (default), use round-robin scheduler.
