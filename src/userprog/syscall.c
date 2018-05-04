@@ -60,9 +60,6 @@ syscall_handler (struct intr_frame *f UNUSED)
   pid_t retvalp;
   unsigned retvalu;
 
-  //ptr
-  void *ptr;
-
   switch (syscode){
     //Halt + Exit
   case SYS_HALT: ;
@@ -84,25 +81,31 @@ syscall_handler (struct intr_frame *f UNUSED)
     //File manip
   case SYS_CREATE: ;
     get_args(args,sp,2);
-    if(args[0] == NULL) //filename can't be NULL
+    if((void *)args[0] == NULL) //filename can't be NULL
       s_exit(-1,f);
-    ptr = usr_to_kernel((void *)args[0],f);
-    retvalb = s_create((char *)ptr,(unsigned)args[1]);
+    args[0] = (uint32_t)usr_to_kernel((void *)args[0],f);
+    retvalb = s_create((char *)args[0],(unsigned)args[1]);
     f->eax = retvalb;
     break;
     
   case SYS_REMOVE: ;
     get_args(args,sp,1);
-    ptr = usr_to_kernel((void *)args[0],f);
-    retvalb = s_remove((char *)ptr);
-    f->eax = retvali;
+    args[0] = (uint32_t)usr_to_kernel((void *)args[0],f);
+    retvalb = s_remove((char *)args[0]);
+    f->eax = retvalb;
     break;
     
   case SYS_OPEN: ;
     get_args(args,sp,1);
-    ptr = usr_to_kernel((void *)args[0],f);
-    retvali = s_open((char *)ptr);
+    args[0] = (uint32_t) usr_to_kernel((void *)args[0],f);
+    retvali = s_open((char *)args[0]);
     f->eax = retvali;
+    break;
+    
+  case SYS_CLOSE: ;
+    get_args(args,sp,1);
+    if(args[0]== 0 || args[0] == 1) s_exit(-1,f);
+    s_close(args[0]);
     break;
     
   case SYS_FILESIZE: ;
@@ -114,9 +117,9 @@ syscall_handler (struct intr_frame *f UNUSED)
     
   case SYS_WRITE: ;
     get_args(args,sp,3);
+    args[1] = (uint32_t) usr_to_kernel((void *)args[1],f);
     
-    ptr = usr_to_kernel((void *)args[1],f);
-    retvali = s_write((int)args[0],(void *)ptr,(unsigned)args[2]);
+    retvali = s_write((int)args[0],(void *)args[1],(unsigned)args[2]);
     f->eax = retvali;
     break;
     
@@ -126,10 +129,6 @@ syscall_handler (struct intr_frame *f UNUSED)
   case SYS_TELL: ;
     break;
 
-    //Why is close down here???
-  case SYS_CLOSE: ;
-    break;
-    
   default:
     printf("syscode not found");
     break;
@@ -169,7 +168,7 @@ bool s_remove (const char *file){
 
 int s_open (const char *file){
   struct openfile of;
-  struct thread *t = thread_current(); //list stored in thread struct
+  struct thread *t = thread_current();
 
   //Filename can't be NULL or empty
   if(file == NULL) return -1; 
@@ -181,13 +180,29 @@ int s_open (const char *file){
   //fill openfile struct and push onto list
   of.fd = t->lastfd++;
   of.fileptr = f;
-  list_push_back(&t->openfiles,&of.fileelem);
-
+  list_push_front(&t->openfiles,&of.fileelem);
+  
   return of.fd;
 }
 
-// int filesize (int fd);
-// int read (int fd, void *buffer, unsigned length);
+void s_close (int fd){
+  struct list_elem *e;
+  struct list l = thread_current()->openfiles;
+
+  // printf("wanted fd: %d\n",fd);
+  if(list_empty(&thread_current()->openfiles)) return;
+
+  for(e = list_begin(&l); e != list_end(&l); e = list_next(e)){
+    struct openfile *of = list_entry(e, struct openfile,fileelem);
+    if(of->fd == fd){
+      list_remove(e);
+      break;
+    }
+  }
+}
+
+// int s_filesize (int fd);
+// int s_read (int fd, void *buffer, unsigned length);
 
 int s_write(int fd, const void *buffer, unsigned size){
   // printf("SYS_WRITE - fd: %d, buf: %s, size: %u\n",fd,buffer,(int)size);
@@ -198,7 +213,6 @@ int s_write(int fd, const void *buffer, unsigned size){
 }
 // void seek (int fd, unsigned position);
 // unsigned tell (int fd);
-// void close (int fd){}
 
 void get_args(uint32_t *buf, void *esp,int argc){
   void *sp = esp;
