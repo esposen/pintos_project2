@@ -3,14 +3,15 @@
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
-#include "lib/string.h"
-#include "lib/stdio.h"
 #include "threads/malloc.h"
 #include "threads/vaddr.h"
-#include "devices/shutdown.h"
+#include "lib/string.h"
+#include "lib/stdio.h"
 #include "lib/debug.h"
+#include "devices/shutdown.h"
 #include "pagedir.h"
 #include "filesys/filesys.h"
+#include "filesys/file.h"
 
 #define UADDR_BOTTOM ((void *) 0x08048000)
 
@@ -62,7 +63,7 @@ syscall_handler (struct intr_frame *f UNUSED)
 
   switch (syscode){
     //Halt + Exit
-  case SYS_HALT: ;
+  case SYS_HALT:
     s_halt();
     break;
     
@@ -72,14 +73,14 @@ syscall_handler (struct intr_frame *f UNUSED)
     break;
 
     //Exec + Wait
-  case SYS_EXEC: ;
+  case SYS_EXEC:
     break;
     
-  case SYS_WAIT: ;
+  case SYS_WAIT:
     break;
 
     //File manip
-  case SYS_CREATE: ;
+  case SYS_CREATE:
     get_args(args,sp,2);
     if((void *)args[0] == NULL) //filename can't be NULL
       s_exit(-1,f);
@@ -88,34 +89,42 @@ syscall_handler (struct intr_frame *f UNUSED)
     f->eax = retvalb;
     break;
     
-  case SYS_REMOVE: ;
+  case SYS_REMOVE:
     get_args(args,sp,1);
     args[0] = (uint32_t)usr_to_kernel((void *)args[0],f);
     retvalb = s_remove((char *)args[0]);
     f->eax = retvalb;
     break;
     
-  case SYS_OPEN: ;
+  case SYS_OPEN:
     get_args(args,sp,1);
     args[0] = (uint32_t) usr_to_kernel((void *)args[0],f);
     retvali = s_open((char *)args[0]);
     f->eax = retvali;
     break;
     
-  case SYS_CLOSE: ;
+  case SYS_CLOSE:
     get_args(args,sp,1);
     if(args[0]== 0 || args[0] == 1) s_exit(-1,f);
     s_close(args[0]);
     break;
     
-  case SYS_FILESIZE: ;
+  case SYS_FILESIZE:
+    get_args(args,sp,1);
+    retvali = s_filesize(args[0]);
+    f->eax = retvali; 
     break;
 
     //Read+Write
-  case SYS_READ: ;
+  case SYS_READ:
+    get_args(args,sp,3);
+    args[1] = (uint32_t) usr_to_kernel((void *)args[1],f);
+    
+    retvali = s_read((int)args[0],(void *)args[1],(unsigned)args[2]);
+    f->eax = retvali;
     break;
     
-  case SYS_WRITE: ;
+  case SYS_WRITE:
     get_args(args,sp,3);
     args[1] = (uint32_t) usr_to_kernel((void *)args[1],f);
     
@@ -123,10 +132,10 @@ syscall_handler (struct intr_frame *f UNUSED)
     f->eax = retvali;
     break;
     
-  case SYS_SEEK : ;
+  case SYS_SEEK :
     break;
     
-  case SYS_TELL: ;
+  case SYS_TELL:
     break;
 
   default:
@@ -201,8 +210,41 @@ void s_close (int fd){
   }
 }
 
-// int s_filesize (int fd);
-// int s_read (int fd, void *buffer, unsigned length);
+int s_filesize (int fd){
+  struct list_elem *e;
+  struct list l = thread_current()->openfiles;
+
+  if(list_empty(&thread_current()->openfiles)) return -1;
+
+  for(e = list_begin(&l); e != list_end(&l); e = list_next(e)){
+    struct openfile *of = list_entry(e, struct openfile,fileelem);
+    if(of->fd == fd){
+      off_t size = file_length(of->fileptr);
+      return (int)size;
+    }
+  }
+  return -1;
+}
+
+int s_read (int fd, void *buffer, unsigned length){
+  struct list_elem *e;
+  struct list l = thread_current()->openfiles;
+
+  if(list_empty(&thread_current()->openfiles)) return -1;
+
+  //TODO: Make FD==0 READ FROM KEYBOARD USING input_getc();
+  if(fd == 0) return -1;
+
+  for(e = list_begin(&l); e != list_end(&l); e = list_next(e)){
+    struct openfile *of = list_entry(e, struct openfile,fileelem);
+    if(of->fd == fd){
+      off_t size = file_read(of->fileptr,buffer,length);
+      return (int)size;
+    }
+  }
+  return -1;
+  
+}
 
 int s_write(int fd, const void *buffer, unsigned size){
   // printf("SYS_WRITE - fd: %d, buf: %s, size: %u\n",fd,buffer,(int)size);
