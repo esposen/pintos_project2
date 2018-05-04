@@ -38,6 +38,9 @@ process_execute (const char *file_name)
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
+
+  char * save;
+  file_name = strtok_r((char *) file_name, " ", &save);
   
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT+2, start_process, fn_copy);
