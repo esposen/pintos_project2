@@ -182,10 +182,12 @@ thread_create (const char *name, int priority,
   /* Initialize thread. */
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
-
-  /* Syscalls */
-  list_init(&(t->openfiles));
+  
+  /* Initalize list of open files for syscalls */
+  list_init(&t->openfiles);
   t->lastfd = 2;
+
+  // printf("is empty (thread_create): %d\n",list_empty(&t->openfiles));
 
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
