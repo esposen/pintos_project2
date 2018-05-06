@@ -11,8 +11,10 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
 #ifdef USERPROG
 #include "userprog/process.h"
+#include "userprog/syscall.h"
 #endif
 
 /* Random value for struct thread's `magic' member.
@@ -166,6 +168,7 @@ tid_t
 thread_create (const char *name, int priority,
                thread_func *function, void *aux) 
 {
+  // printf("thread create\n");
   struct thread *t;
   struct kernel_thread_frame *kf;
   struct switch_entry_frame *ef;
@@ -204,9 +207,20 @@ thread_create (const char *name, int priority,
   sf->eip = switch_entry;
   sf->ebp = 0;
 
+  // Add child process to child list
+  t->parent = thread_tid();
+  struct child_proc *c = add_child(t->tid);
+  // printf("current thread: %d\n", thread_tid());
+  //printf("current thread child: %d\n",thread_current()->child->pid);
+  t->child = c;
+  // printf("being created: %d\n", t->tid);
+  // printf("parent of thread being created:%d\n",t->parent);
+  // printf("child of thread being created: %d\n", t->child->pid);
+
   /* Add to run queue. */
   thread_unblock (t);
   if (thread_current()->priority<priority){
+    // printf("thread %d yielding\n", thread_tid());
     thread_yield();
   }
 
@@ -472,6 +486,9 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+  list_init(&t->child_list);
+  t->child = NULL;
+  t->parent = NO_PARENT;
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
@@ -591,3 +608,55 @@ allocate_tid (void)
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
+
+
+struct child_proc* add_child(int pid){
+  struct child_proc *c = malloc(sizeof(struct child_proc));
+  c->pid = pid;
+  c->load = NOT_LOADED;
+  sema_init(&c->load_sema, 0);
+  c->wait = false;
+  c->exit = false;
+  lock_init(&c->wait_lock);
+  list_push_back(&thread_current()->child_list,
+    &c->childelem);
+  return c;
+}
+
+struct child_proc* get_child_proc(int pid){
+  struct thread *curr = thread_current();
+  struct list_elem *e;
+  for(e = list_begin(&curr->child_list);
+    e != list_end(&curr->child_list);
+    e = list_next(e)){
+    struct child_proc* c = list_entry(e, struct child_proc,childelem);
+    if(pid == c->pid) return c;
+  }
+  return NULL;
+}
+
+void remove_child(struct child_proc *c){
+  list_remove(&c->childelem);
+  free(c);
+}
+
+void remove_all_children(){
+  struct thread *t = thread_current();
+  struct list_elem *e;
+
+  while(!list_empty(&t->child_list)){
+    e = list_pop_front(&t->child_list);
+    struct child_proc *c = list_entry(e,struct child_proc, childelem);
+    remove_child(c);
+  }
+}
+
+bool thread_exists(int pid){
+  struct list_elem *e;
+  for(e = list_begin(&all_list); e != list_end(&all_list);
+    e = list_next(e)){
+    struct thread *t = list_entry(e, struct thread, allelem);
+    if (t->tid == pid) return true;
+  }
+  return false;
+}

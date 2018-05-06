@@ -11,6 +11,7 @@
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
+#include "threads/thread.h"
 #include "threads/flags.h"
 #include "threads/init.h"
 #include "threads/interrupt.h"
@@ -43,7 +44,8 @@ process_execute (const char *file_name)
   file_name = strtok_r((char *) file_name, " ", &save);
   
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT+2, start_process, fn_copy);
+  //printf("thread being created with file name '%s', aux '%s'\n", file_name,fn_copy);
+  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy);
   return tid;
@@ -57,6 +59,7 @@ start_process (void *file_name_)
   char *file_name = file_name_;
   struct intr_frame if_;
   bool success;
+  //printf("in start\n");
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
@@ -64,6 +67,16 @@ start_process (void *file_name_)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (file_name, &if_.eip, &if_.esp);
+  if(success){
+    thread_current()->child->load = LOAD_SUCCESS;
+    //printf("load of %d successfull\n",thread_current()->child->pid);
+  }
+  else{
+    thread_current()->child->load = LOAD_FAIL;
+    //printf("load fail\n");
+  }
+  //printf("sema up\n");
+  sema_up(&thread_current()->child->load_sema);
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
@@ -92,7 +105,18 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
-  return -1;
+  struct child_proc *c = get_child_proc(child_tid);
+  if(!c || c->wait) return -1;
+
+  c->wait = true;
+
+  while(!c->exit){
+    barrier();
+  } 
+  int status = c->status;
+
+  remove_child(c);
+  return status;
 }
 
 /* Free the current process's resources. */
@@ -101,6 +125,11 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
+
+  remove_all_children();
+
+  if(thread_exists(cur->parent))
+    cur->child->exit = true;
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
