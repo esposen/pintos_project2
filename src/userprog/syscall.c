@@ -49,6 +49,7 @@ syscall_init (void)
 static void
 syscall_handler (struct intr_frame *f UNUSED) 
 {
+  verify_ptr((const void *)f->esp,f);
   void *sp = f->esp; 
   // hex_dump(f->esp,f->esp,PHYS_BASE-f->esp,true); printf("\n");  
   int syscode = *(int *)sp;
@@ -79,7 +80,8 @@ syscall_handler (struct intr_frame *f UNUSED)
   case SYS_EXEC:
     get_args(args,sp,1);
     args[0]= (uint32_t)usr_to_kernel((void *)args[0],f);
-    //printf("Args: %s\n", args[0]);
+    // if(filesys_open(args[0]) == NULL)
+    //   s_exit(-1,f);
     retvalp = s_exec((char *)args[0]);
     f->eax = retvalp;
     break;
@@ -161,34 +163,31 @@ void s_halt (void){
 
 void s_exit (int s, struct intr_frame *f){
   f->eax = s;
+  struct thread *curr = thread_current();
+  if(thread_exists(curr->parent))
+    curr->child->status = s;
   printf("%s: exit(%d)\n",thread_current()->name,s);
   thread_exit();
   NOT_REACHED();
 }
 
 pid_t s_exec (const char *file){
-  //printf("IN EXEC, %d\n", thread_current()->tid);
   pid_t pid = process_execute(file);
-  //printf("BACK IN EXEC, %d\n", thread_current()->tid);
 
   struct child_proc *c = get_child_proc(pid);
   //Make sure child exists
   ASSERT(c);
-  //printf("wating on: %d, sema down\n", c->pid);
   sema_down(&c->load_sema);
   if(c->load == LOAD_FAIL){
-    //printf("FIALURE\n");
     return -1;
   }
-
-  //printf("DONE\n");
 
   return pid;
 }
 
 
 int s_wait (pid_t pid){
-  process_wait(pid);
+  return process_wait(pid);
 }
 
 bool s_create (const char *file, unsigned initial_size){

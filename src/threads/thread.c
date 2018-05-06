@@ -642,12 +642,12 @@ void remove_child(struct child_proc *c){
 
 void remove_all_children(){
   struct thread *t = thread_current();
-  struct list_elem *e = list_begin(&t->child_list);
+  struct list_elem *e;
 
-  while(e!=list_end(&t->child_list)){
+  while(!list_empty(&t->child_list)){
+    e = list_pop_front(&t->child_list);
     struct child_proc *c = list_entry(e,struct child_proc, childelem);
     remove_child(c);
-    e = list_next(e);
   }
 }
 

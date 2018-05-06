@@ -45,7 +45,7 @@ process_execute (const char *file_name)
   
   /* Create a new thread to execute FILE_NAME. */
   //printf("thread being created with file name '%s', aux '%s'\n", file_name,fn_copy);
-  tid = thread_create (file_name, PRI_DEFAULT + 2 , start_process, fn_copy);
+  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy);
   return tid;
@@ -114,6 +114,7 @@ process_wait (tid_t child_tid UNUSED)
     barrier();
   } 
   int status = c->status;
+
   remove_child(c);
   return status;
 }
