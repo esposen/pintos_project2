@@ -2,6 +2,11 @@
 #define USERPROG_SYSCALL_H
 
 #include <list.h>
+#include "threads/synch.h"
+
+#define NOT_LOADED 0
+#define LOAD_SUCCESS 1
+#define LOAD_FAIL 2
 
 typedef int pid_t;
 

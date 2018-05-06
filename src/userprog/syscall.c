@@ -5,6 +5,8 @@
 #include "threads/thread.h"
 #include "threads/malloc.h"
 #include "threads/vaddr.h"
+#include "threads/synch.h"
+#include "threads/malloc.h"
 #include "lib/string.h"
 #include "lib/stdio.h"
 #include "lib/debug.h"
@@ -12,6 +14,7 @@
 #include "pagedir.h"
 #include "filesys/filesys.h"
 #include "filesys/file.h"
+#include "userprog/process.h"
 
 #define UADDR_BOTTOM ((void *) 0x08048000)
 
@@ -74,9 +77,16 @@ syscall_handler (struct intr_frame *f UNUSED)
 
     //Exec + Wait
   case SYS_EXEC:
+    get_args(args,sp,1);
+    args[0]= (uint32_t)usr_to_kernel((void *)args[0],f);
+    //printf("Args: %s\n", args[0]);
+    retvalp = s_exec((char *)args[0]);
+    f->eax = retvalp;
     break;
     
   case SYS_WAIT:
+    get_args(args,sp,1);
+    f->eax = s_wait(args[0]);
     break;
 
     //File manip
@@ -156,8 +166,30 @@ void s_exit (int s, struct intr_frame *f){
   NOT_REACHED();
 }
 
-// pid_t s_exec (const char *file);
-// int s_wait (pid_t);
+pid_t s_exec (const char *file){
+  //printf("IN EXEC, %d\n", thread_current()->tid);
+  pid_t pid = process_execute(file);
+  //printf("BACK IN EXEC, %d\n", thread_current()->tid);
+
+  struct child_proc *c = get_child_proc(pid);
+  //Make sure child exists
+  ASSERT(c);
+  //printf("wating on: %d, sema down\n", c->pid);
+  sema_down(&c->load_sema);
+  if(c->load == LOAD_FAIL){
+    //printf("FIALURE\n");
+    return -1;
+  }
+
+  //printf("DONE\n");
+
+  return pid;
+}
+
+
+int s_wait (pid_t pid){
+  process_wait(pid);
+}
 
 bool s_create (const char *file, unsigned initial_size){
   //filename can't be empty
@@ -210,11 +242,12 @@ void s_close (int fd){
   }
 }
 
+// fix underflow
 int s_filesize (int fd){
   struct list_elem *e;
   struct list l = thread_current()->openfiles;
 
-  if(list_empty(&thread_current()->openfiles)) return -1;
+  if(list_empty(&thread_current()->openfiles)) return 0;
 
   for(e = list_begin(&l); e != list_end(&l); e = list_next(e)){
     struct openfile *of = list_entry(e, struct openfile,fileelem);
@@ -223,17 +256,17 @@ int s_filesize (int fd){
       return (int)size;
     }
   }
-  return -1;
+  return 0;
 }
 
 int s_read (int fd, void *buffer, unsigned length){
   struct list_elem *e;
   struct list l = thread_current()->openfiles;
 
-  if(list_empty(&thread_current()->openfiles)) return -1;
+  if(list_empty(&thread_current()->openfiles)) return 0;
 
   //TODO: Make FD==0 READ FROM KEYBOARD USING input_getc();
-  if(fd == 0) return -1;
+  if(fd == 0) return 0;
 
   for(e = list_begin(&l); e != list_end(&l); e = list_next(e)){
     struct openfile *of = list_entry(e, struct openfile,fileelem);
@@ -242,7 +275,7 @@ int s_read (int fd, void *buffer, unsigned length){
       return (int)size;
     }
   }
-  return -1;
+  return 0;
   
 }
 

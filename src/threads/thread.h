@@ -4,7 +4,9 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "synch.h"
 #include "filesys/filesys.h"
+// #include ""
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -24,6 +26,12 @@ typedef int tid_t;
 #define PRI_MIN 0                       /* Lowest priority. */
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
+
+#define NO_PARENT -1
+
+#define NOT_LOADED 0
+#define LOAD_SUCCESS 1
+#define LOAD_FAIL 2
 
 /* A kernel thread or user process.
 
@@ -104,9 +112,26 @@ struct thread
     
     // struct openfile openf;
     struct list openfiles;
+
+    // struct childprocs list
+    struct list child_list;
+    tid_t parent;
+    // Points to child_process struct in parent's child list
+    struct child_proc* child;
     
     int lastfd; /*Last file descriptor given*/
   };
+
+struct child_proc{
+  int pid;
+  int load;
+  bool wait;
+  bool exit;
+  int status;
+  struct lock wait_lock;
+  struct semaphore load_sema;
+  struct list_elem childelem;
+};
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
@@ -143,5 +168,11 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+
+struct child_proc* add_child(int pid);
+struct child_proc* get_child_proc(int pid);
+void remove_child(struct child_proc *c);
+void remove_all_children();
+bool thread_exists(int pid);
 
 #endif /* threads/thread.h */
