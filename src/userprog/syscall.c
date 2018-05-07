@@ -43,6 +43,7 @@ struct openfile *find_file(int);
 void
 syscall_init (void) 
 {
+  lock_init(&fslock);
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
@@ -95,21 +96,27 @@ syscall_handler (struct intr_frame *f UNUSED)
       if((void *)args[0] == NULL) //filename can't be NULL
         s_exit(-1,f);
       args[0] = (uint32_t)usr_to_kernel((void *)args[0],f);
+      lock_acquire(&fslock);
       retvalb = s_create((char *)args[0],(unsigned)args[1]);
+      lock_release(&fslock);
       f->eax = retvalb;
       break;
       
     case SYS_REMOVE:
       get_args(args,sp,1);
       args[0] = (uint32_t)usr_to_kernel((void *)args[0],f);
+      lock_acquire(&fslock);
       retvalb = s_remove((char *)args[0]);
+      lock_release(&fslock);
       f->eax = retvalb;
       break;
       
     case SYS_OPEN:
       get_args(args,sp,1);
       args[0] = (uint32_t) usr_to_kernel((void *)args[0],f);
+      lock_acquire(&fslock);
       retvali = s_open((char *)args[0]);
+      lock_release(&fslock);
       f->eax = retvali;
       break;
       

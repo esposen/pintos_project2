@@ -12,7 +12,10 @@ struct openfile{
   struct list_elem fileelem; 
 };
 
+struct lock fslock;
+
 void syscall_init (void);
+
 
 
 #endif /* userprog/syscall.h */
