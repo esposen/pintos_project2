@@ -210,19 +210,10 @@ thread_create (const char *name, int priority,
   // Add child process to child list
   t->parent = thread_tid();
   struct child_proc *c = add_child(t->tid);
-  // printf("current thread: %d\n", thread_tid());
-  //printf("current thread child: %d\n",thread_current()->child->pid);
   t->child = c;
-  // printf("being created: %d\n", t->tid);
-  // printf("parent of thread being created:%d\n",t->parent);
-  // printf("child of thread being created: %d\n", t->child->pid);
 
   /* Add to run queue. */
   thread_unblock (t);
-  if (thread_current()->priority<priority){
-    // printf("thread %d yielding\n", thread_tid());
-    thread_yield();
-  }
 
   return tid;
 }
@@ -610,19 +601,20 @@ allocate_tid (void)
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
 
 
+/*Intializes child_proc and adds it to parent's list of children*/
 struct child_proc* add_child(int pid){
   struct child_proc *c = malloc(sizeof(struct child_proc));
   c->pid = pid;
   c->load = NOT_LOADED;
   sema_init(&c->load_sema, 0);
+  sema_init(&c->wait_sema, 0);
   c->wait = false;
-  c->exit = false;
-  lock_init(&c->wait_lock);
   list_push_back(&thread_current()->child_list,
     &c->childelem);
   return c;
 }
 
+/*Returns child proc of current thread with specific pid*/
 struct child_proc* get_child_proc(int pid){
   struct thread *curr = thread_current();
   struct list_elem *e;
@@ -635,11 +627,13 @@ struct child_proc* get_child_proc(int pid){
   return NULL;
 }
 
+/*Removes single child proc from list of children*/
 void remove_child(struct child_proc *c){
   list_remove(&c->childelem);
   free(c);
 }
 
+/*Removes all children from current threads's list of children*/
 void remove_all_children(){
   struct thread *t = thread_current();
   struct list_elem *e;
@@ -651,6 +645,7 @@ void remove_all_children(){
   }
 }
 
+/*Checks if thread with pid exists in the system*/
 bool thread_exists(int pid){
   struct list_elem *e;
   for(e = list_begin(&all_list); e != list_end(&all_list);
