@@ -1,0 +1,153 @@
+ >> 
+>> CMSC 326
+>> Design Document for Project #2: System Calls and User Programs
+>> Due: 28.March.2018
+>> 
+>> This plain text file should be called Project2_Design.txt and it
+>> should be completed and uploaded on Moodle.
+>> 
+>> Your submission will receive 50% of its points based on how well it
+>> passes my tests.  The remaining 50% is divided between the design
+>> document and your code quality.  The latter includes commenting,
+>> clarity, consistency with the Pintos style, and efficiency (in that
+>> order).
+>> 
+>> Please limit the width of all lines in this document to no more than 100 characters.
+>> 
+>> ---- GROUP ----
+>> 
+>> Malcolm Gilbert <mg3128@bard.edu}
+>> Elias Posen     <ep2851@bard.edu}
+>> Draw Carlson    <ac7303@bard.edu}
+>> 
+>> GitHub Repository: https://github.com/esposen/pintos_project2
+>> 
+>> ---- PRELIMINARIES ----
+>> 
+>> If you have any preliminary comments on your submission, please give them here.
+>> 
+>> Please cite any offline or online sources you consulted while
+>> preparing your submission, other than the Pintos documentation, course
+>> text, and notes provided by the instructor.
+>> 
+>> *************************Section 1: Argument Passing
+>> 
+>> ---- DATA STRUCTURES ----
+>> 
+>> Copy here the declaration of each new or changed `struct' or `struct'
+>> member, global or static variable, `typedef', or enumeration.
+>> IDENTIFY THE PURPOSE OF EACH IN 25 WORDS OR LESS.  Precede each by its
+>> directory and file name.
+>>
+>> src/threads/thread.h
+>> 
+>> A “child_proc” is owned by a thread, and details relevant information a parent would
+>> want to know. Used to control exec and waiting on a child. Loading information added >> during start_process.
+>>     struct child_proc 
+>>       {
+>>         int pid;              		/*  */
+>>         int load			   	/*  */
+>>         bool wait;              		/*  */
+>>         int status;              		/*  */
+>>         struct semaphore wait_sema		/*  */
+>>         struct semaphore load_sema;      	/*  */
+>>         struct list_elem childelem		/*  */
+>>       };
+>> 
+>> ---- ALGORITHMS ----
+>> 
+>> Q1. Describe how you implemented argument passing and filling argv[]?
+>> How do you avoid overflowing the stack memory page?
+>> A1. In process.c:load(), we tokenize the string into separate words using
+>> strtok_r(). Then we simply add them to an array with maximum size of 10 arguments.
+>> 
+>> Q2. In Pintos, the kernel separates commands into a executable name
+>> and arguments.  In Unix-like systems, the shell does this separation.
+>> Identify at least one advantage of the Unix approach.
+>> A2. Since the shell is abstracted away from the kernel, it’s much simpler to
+>> implement. 
+>> 
+>> *************************Section 2: System Calls
+>> 
+>> ---- DATA STRUCTURES ----
+>> 
+>> src/userprog/syscall.h
+>>
+>> An “openfile” has only two elements and a list_elem. The first is a pointer to the 
+>> file, the second is simply the files associated file descriptor (fd). It is put into 
+>> a list owned by a thread.  
+>>
+>> struct openfile
+>>	{
+>>	  struct file *fileptr;
+>>	  int fd; 
+>>	  struct list_elem fileelem; 
+>> 	};
+>> 
+>> src/thread/thread.h
+>>
+>> The “openfiles" list lists all the files the thread has open. The “child_list” is 
+>> all of the thread’s children. The “child” is the relevant information a parent would 
+>> want to know about the current thread. 
+>>
+>> struct thread	
+>>	{
+>>	  struct list openfiles;
+>>	  struct list child_list;
+>>	  struct child_proc* child; 
+>>	};
+>>
+>> Q3. Describe how file descriptors are associated with open files.  Are
+>> file descriptors unique within the entire OS or just within a single
+>> process?
+>> A3. File descriptors are unique to each open file, and are unique to a single 
+>> process. Each process keeps track of its own open files, so not only are file 
+>> descriptors different for each file, but also may vary between different processes. 
+>> 
+>> ---- ALGORITHMS ----
+>> 
+>> Q4. Describe how you check memory addresses for validity.  Refer to
+>> your specific procedures.  During system calls where to these memory
+>> address validations occur?
+>> A4. In src/userprog/syscall.c we have to check the validity of user-provided 
+>> pointers. The verify_ptr function validates that the pointer is within the user 
+>> space, which is above a certain bound and below PHYS_BASE. In addition, we also have 
+>> to change the user virtual address to a kernel address, so the kernel can work with 
+>> it.  
+>> 
+>> Q5. How does the implementation of your wait system call work?  How
+>> does it interact with related processes and process termination?
+>> A5. A wait system call sends the thread to process.c’s process_wait(child_tid)
+>> function via the system call handlers in syscall.c. This function finds the child
+>> that will be waited upon according the the child_tid. If the child doesn’t exist or 
+>> if the process_wait() has already been successfully called for the given child_tid.
+>> The thread then blocks on the child’s wait_sema. When the child is exiting in
+>> process_exit (process.c), it checks if it has a parent and if that parent exists in
+>> the current system. If the parent exists, the child does an up on the wait_sema which
+>> unblocks the parent in process_wait. The parent then stores the status of the child
+>> before removing it from its list of children and returning the status.
+>> 
+>> ---- SYNCHRONIZATION ----
+>> 
+>> Q6. The exec system call returns -1 if loading the new executable
+>> fails, so it cannot return before the new executable has completed
+>> loading.  How does your code ensure this?  How is the load
+>> success/failure status passed back to the thread that calls exec?
+>> A6. In the thread’s child_proc struct there is an integer named load. When a thread is >> created in thread.c the load value is initially at NOT_LOADED (0). While the thread is >> loading, its parent is blocked on a semaphore (load_sema) in s_exec in syscall.c. In >> process.c’s start_process function the success of the load is returned as a boolean.
+>> According to this boolean the load value of the thread is updated to LOAD_FAIL (2) or 
+>> LOAD_SUCCESS	 (1). Following this the parent is unblocked by doing an up on load_sema. >> Back in s_exec in syscall.c the parent checks the load value of the child that was
+>> just loaded and returns -1 if there was a failure, otherwise it returns the pid of the
+>> child.
+>> 
+>> 
+>> Q7. Consider parent process P with child process C.  How do you
+>> ensure proper synchronization and avoid race conditions when P
+>> calls wait(C) before C exits?  After C exits?  How do you ensure
+>> that all resources are freed in each case?  How about when P
+>> terminates without waiting, before C exits?  After C exits? 
+>> A7. If wait(C) is called before C exits, P will block on C’s wait_sema, which is
+>> initialized to zero, until C exits. This blocking ensures ensures no race conditions.
+>> If c has already exited it will no longer exist in P’s child list so P will exit wait
+>> because the get_child_proc function will return. When any process exits, frees up all 
+>> space that has been malloced and not yet freed (references to child proc).
+>> null
