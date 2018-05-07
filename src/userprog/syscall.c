@@ -38,6 +38,7 @@ void s_close (int);
 void get_args(uint32_t *buf, void *esp,int argc);
 void verify_ptr(void *,struct intr_frame *);
 void *usr_to_kernel(void *, struct intr_frame *);
+struct openfile *find_file(int);
 
 void
 syscall_init (void) 
@@ -49,12 +50,13 @@ syscall_init (void)
 static void
 syscall_handler (struct intr_frame *f UNUSED) 
 {
-  verify_ptr((const void *)f->esp,f);
+  verify_ptr((void *)f->esp,f);
   void *sp = f->esp; 
   // hex_dump(f->esp,f->esp,PHYS_BASE-f->esp,true); printf("\n");  
   int syscode = *(int *)sp;
   sp += sizeof(int *);
-  //printf("System Call: %d\n",syscode);
+  
+  // printf("System Call: %d\n",syscode);
 
   //get_args put args in here
   uint32_t args[3];
@@ -181,7 +183,6 @@ pid_t s_exec (const char *file){
   if(c->load == LOAD_FAIL){
     return -1;
   }
-
   return pid;
 }
 
@@ -207,9 +208,9 @@ bool s_remove (const char *file){
 }
 
 int s_open (const char *file){
-  struct openfile of;
+  struct openfile *of = malloc(sizeof(struct openfile *));
   struct thread *t = thread_current();
-
+  
   //Filename can't be NULL or empty
   if(file == NULL) return -1; 
   if(strcmp(file,"") == 0) return -1;
@@ -218,21 +219,22 @@ int s_open (const char *file){
   if(f == NULL) return -1; //if NULL ptr, failed to open
 
   //fill openfile struct and push onto list
-  of.fd = t->lastfd++;
-  of.fileptr = f;
-  list_push_front(&t->openfiles,&of.fileelem);
-  
-  return of.fd;
+  of->fd = t->lastfd++;
+  of->fileptr = f;
+  list_push_front(&t->openfiles,&of->fileelem);
+
+  return of->fd;
 }
 
 void s_close (int fd){
   struct list_elem *e;
-  struct list l = thread_current()->openfiles;
-
+  struct thread *t = thread_current();
   // printf("wanted fd: %d\n",fd);
-  if(list_empty(&thread_current()->openfiles)) return;
-
-  for(e = list_begin(&l); e != list_end(&l); e = list_next(e)){
+  if(list_empty(&t->openfiles)) return;
+  
+  for(e = list_begin(&t->openfiles);
+      e != list_end(&t->openfiles);
+      e = list_next(e)){
     struct openfile *of = list_entry(e, struct openfile,fileelem);
     if(of->fd == fd){
       list_remove(e);
@@ -243,70 +245,77 @@ void s_close (int fd){
 
 // fix underflow
 int s_filesize (int fd){
-  struct list_elem *e;
-  struct list l = thread_current()->openfiles;
-
-  if(list_empty(&thread_current()->openfiles)) return 0;
-
-  for(e = list_begin(&l); e != list_end(&l); e = list_next(e)){
-    struct openfile *of = list_entry(e, struct openfile,fileelem);
-    if(of->fd == fd){
-      off_t size = file_length(of->fileptr);
-      return (int)size;
-    }
-  }
-  return 0;
+  off_t size = 0;
+  
+  struct openfile *of = find_file(fd);
+  if(of == NULL) return 0;
+  
+  size = file_length(of->fileptr);
+  return (int) size; 
 }
 
 int s_read (int fd, void *buffer, unsigned length){
-  struct list_elem *e;
-  struct list l = thread_current()->openfiles;
+   off_t size = 0;
+   
+   //TODO: Make FD==0 READ FROM KEYBOARD USING input_getc();
+   if(fd == 0) return 0;
 
-  if(list_empty(&thread_current()->openfiles)) return 0;
-
-  //TODO: Make FD==0 READ FROM KEYBOARD USING input_getc();
-  if(fd == 0) return 0;
-
-  for(e = list_begin(&l); e != list_end(&l); e = list_next(e)){
-    struct openfile *of = list_entry(e, struct openfile,fileelem);
-    if(of->fd == fd){
-      off_t size = file_read(of->fileptr,buffer,length);
-      return (int)size;
-    }
-  }
-  return 0;
-  
-}
-
+   struct openfile *of = find_file(fd);
+   if(of == NULL) return 0;
+   
+   size = file_read(of->fileptr,buffer,length);
+   return (int)size;
+ }
+ 
 int s_write(int fd, const void *buffer, unsigned size){
-  // printf("SYS_WRITE - fd: %d, buf: %s, size: %u\n",fd,buffer,(int)size);
-  // printf("buff: %x\n",buffer);
-  if (fd == 1)
+  off_t bytes_written = 0;
+  // printf("sys_w - fd: %d, buf: %s, size: %u\n",fd,buffer,(int)size);
+  
+  if (fd == 1) //fd == 1 is console 
     putbuf(buffer,size);
-  return size; 
+
+  struct openfile *of = find_file(fd);
+  if(of == NULL) return 0;
+
+  bytes_written = file_write(of->fileptr,buffer,size);
+  return (int) bytes_written;
 }
 // void seek (int fd, unsigned position);
 // unsigned tell (int fd);
-
+ 
 void get_args(uint32_t *buf, void *esp,int argc){
   void *sp = esp;
-
+  
   for(int i=0;i<argc;i++){
     buf[i] = *(int *)sp;
-    sp += sizeof(int *);    
+     sp += sizeof(int *);    
   }
 }
 
-/* verifies within valid user virtual memory  */
+/* Verifies within valid user virtual memory  */
 void verify_ptr(void *ptr,struct intr_frame *f){
   if(!is_user_vaddr(ptr) || ptr<UADDR_BOTTOM) s_exit(-1,f);
 }
 
-/* converts to physical memory */
+/* Converts to physical memory */
 void *usr_to_kernel(void *vaddr, struct intr_frame *f){
   verify_ptr(vaddr,f);
   void *p = pagedir_get_page(thread_current()->pagedir,vaddr);
   if(p == NULL) s_exit(-1,f);
   
   return p;
-} 
+}
+
+/* Given file descripter FD, finds associated file struct 
+  NOTE: Not safe for multi-threading */
+struct openfile *find_file(int fd){
+  struct thread *t = thread_current();
+  struct list_elem *e;
+  for(e = list_begin(&t->openfiles);
+      e != list_end(&t->openfiles);
+      e = list_next(e)){
+    struct openfile *of = list_entry(e, struct openfile,fileelem);
+    if(of->fd == fd) return of;
+  }
+  return NULL;
+}
