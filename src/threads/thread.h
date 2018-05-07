@@ -27,8 +27,9 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 
-#define NO_PARENT -1
+#define NO_PARENT -1                    /* No parent indicator */
 
+/* Different thread load status*/
 #define NOT_LOADED 0
 #define LOAD_SUCCESS 1
 #define LOAD_FAIL 2
@@ -111,26 +112,27 @@ struct thread
     unsigned magic;                     /* Detects stack overflow. */
     
     // struct openfile openf;
-    struct list openfiles;
+    struct list openfiles;              /* List of files currently opened by thread */
 
-    // struct childprocs list
-    struct list child_list;
-    tid_t parent;
-    // Points to child_process struct in parent's child list
-    struct child_proc* child;
+    struct list child_list;             /*Thread's list of child processes*/
+    tid_t parent;                       /*Thread ID of parent*/
+    struct child_proc* child;           /*Relevant info for thread's parent.
+                                          This is not the child of the current thread,
+                                          rather a representation of the current thread 
+                                          as a child*/
     
-    int lastfd; /*Last file descriptor given*/
+    int lastfd;                         /*Last file descriptor given*/
   };
 
+/*Representation of thread as a child*/
 struct child_proc{
-  int pid;
-  int load;
-  bool wait;
-  bool exit;
-  int status;
-  struct lock wait_lock;
-  struct semaphore load_sema;
-  struct list_elem childelem;
+  int pid;                              //Thread's pid
+  int load;                             //Load status
+  bool wait;                            //Is thread waiting?
+  int status;                           //Thread's status
+  struct semaphore wait_sema;           //Blocks thread when waiting
+  struct semaphore load_sema;           //Blocks parent while thread is loading
+  struct list_elem childelem;           //List element for parent's child list
 };
 
 /* If false (default), use round-robin scheduler.

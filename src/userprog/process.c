@@ -17,6 +17,7 @@
 #include "threads/interrupt.h"
 #include "threads/malloc.h"
 #include "threads/palloc.h"
+#include "threads/synch.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 
@@ -44,7 +45,6 @@ process_execute (const char *file_name)
   file_name = strtok_r((char *) file_name, " ", &save);
   
   /* Create a new thread to execute FILE_NAME. */
-  //printf("thread being created with file name '%s', aux '%s'\n", file_name,fn_copy);
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy);
@@ -59,7 +59,6 @@ start_process (void *file_name_)
   char *file_name = file_name_;
   struct intr_frame if_;
   bool success;
-  //printf("in start\n");
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
@@ -67,15 +66,15 @@ start_process (void *file_name_)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (file_name, &if_.eip, &if_.esp);
+
+  // Updates load, whether it is succesful or not
   if(success){
     thread_current()->child->load = LOAD_SUCCESS;
-    //printf("load of %d successfull\n",thread_current()->child->pid);
   }
   else{
     thread_current()->child->load = LOAD_FAIL;
-    //printf("load fail\n");
   }
-  //printf("sema up\n");
+  // Unblock parent who calls exec
   sema_up(&thread_current()->child->load_sema);
 
   /* If load failed, quit. */
@@ -98,10 +97,7 @@ start_process (void *file_name_)
    exception), returns -1.  If TID is invalid or if it was not a
    child of the calling process, or if process_wait() has already
    been successfully called for the given TID, returns -1
-   immediately, without waiting.
-
-   This function will be implemented in problem 2-2.  For now, it
-   does nothing. */
+   immediately, without waiting. */
 int
 process_wait (tid_t child_tid UNUSED) 
 {
@@ -110,9 +106,7 @@ process_wait (tid_t child_tid UNUSED)
 
   c->wait = true;
 
-  while(!c->exit){
-    barrier();
-  } 
+  sema_down(&c->wait_sema); 
   int status = c->status;
 
   remove_child(c);
@@ -129,7 +123,7 @@ process_exit (void)
   remove_all_children();
 
   if(thread_exists(cur->parent))
-    cur->child->exit = true;
+    sema_up(&cur->child->wait_sema);
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -251,8 +245,6 @@ load (const char *file_name, void (**eip) (void), void **esp)
   char *fn_copy, *save_ptr, *token;
   char **dir = malloc(sizeof(char*)*10);
 
-  //printf("loading\n");
-
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
   fn_copy = palloc_get_page (0);
@@ -260,11 +252,12 @@ load (const char *file_name, void (**eip) (void), void **esp)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
 
+  /* Divide file_name into individual words, storing them in 
+     dir */
   int argc = 0;
   for (token = strtok_r (fn_copy, " ", &save_ptr); token != NULL;
        token = strtok_r (NULL, " ", &save_ptr)){
     dir[argc] = token;
-    //printf ("dir[%d]: %s\n",argc, dir[argc]);
     argc++;
   }
 
@@ -364,8 +357,6 @@ load (const char *file_name, void (**eip) (void), void **esp)
   *eip = (void (*) (void)) ehdr.e_entry;
 
   success = true;
-
-  //printf("done loading \n");
   
  done:
   /* We arrive here whether the load is successful or not. */
@@ -490,8 +481,6 @@ setup_stack (void **esp, char **dir, int argc)
   uint8_t *kpage;
   bool success = false;
   void *offset = PHYS_BASE;
-
-  //printf("setting up stack \n");
   
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
   if (kpage != NULL) 
@@ -506,13 +495,10 @@ setup_stack (void **esp, char **dir, int argc)
 	for(int i=argc-1; i>=0; i--){ //args (i.e. dir)
 	  *esp -= sizeof(char)*(strlen(dir[i])+1);
 	  strlcpy(*esp,dir[i],strlen(dir[i])+1);
-	  //printf("&dir[%d]: %x\n",i,*esp);
 	}
 	
 	*esp -= sizeof(char *); //null delimiter word
 	*(uint32_t *)*esp = (uint32_t) 0;
-
-	//*(int *)args[i];
 
 	//padding
 	while((uint32_t)*esp % sizeof(void *) != 0){
@@ -520,9 +506,7 @@ setup_stack (void **esp, char **dir, int argc)
 	}
 	
 	for(int i=argc-1; i>=0; i--){   //dir addresses
-	  //printf("%d,%x\n",i,offset);
 	  offset -= strlen(dir[i])+1;
-	  //printf("%d,%d,%x\n",strlen(dir[i])+1,i,offset);
 	  
 	  *esp -= sizeof(char *);
 	  *(uint32_t *)* esp = (uint32_t *) offset;
@@ -545,7 +529,6 @@ setup_stack (void **esp, char **dir, int argc)
     }
 
   // hex_dump((uintptr_t)*esp,*esp,(int)PHYS_BASE-(int)*esp,true);  
-  // printf("set up stack (hopefully) \n");
   
   return success;
 }
