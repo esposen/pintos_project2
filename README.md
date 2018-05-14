@@ -1,31 +1,17 @@
-# pintos-anon
+# Pintos Project 2
 
-Latest version from Stanford repo. used in CMSC 326 at Bard College.
+- Latest version from Stanford repo. used in CMSC 326 - Operating Systems at Bard College.
 
-# To get started
+- Implementation of stack intialization and system calls.
 
-- These directions assume that you have all the necessary other
-  packages (e.g., gcc, gdb, qemu, etc) installed properly.  If not,
-  read the "Installing Pintos" section of the Pinto Manual.
+- For more information on implementation decisions and overview of alterations made to basic Pintos, see \Project2_Design.txt
 
-- move the main pintos directory to a reasonable location (e.g., mkdir
-  ~/cmsc326; mv pintos ~/cmsc326)
+## Usage
 
-- edit your .bashrc file to add the pintos/src/utils directory to your path
+Clone this branch and follow the [Getting Started](https://web.stanford.edu/class/cs140/projects/pintos/pintos_1.html) guidlines to set up pintos on your system. See [Project 2 Description](https://web.stanford.edu/class/cs140/projects/pintos/pintos_3.html#SEC32) for more information and instructions concerning this project.
 
-export PATH="$PATH:/home/YOURID/cmsc326/pintos/src/utils"
+Run the following commands to run project 2 tests:
 
-- edit your .bashrc file, setting the GDBMACROS environment variable to "pintos/src/misc/gdb-macros"
-
-GDBMACROS="/home/YOURID/cmsc326/pintos/src/misc/gdb-macros"
-
-- Execute your changes: "source ~/.bashrc"
-
-- Change directory to pintos/src/utils and type "make"
-
-- Change directory to pintos/src/threads and type "make"
-
-- Change directory to pintos/src/threads.  Now run a test program
-  "pintos run alarm-multiple"
-
-Pintos should run and load several threads in a QEMU terminal.
+    $ cd src/userprog
+    $ make check
+ 
